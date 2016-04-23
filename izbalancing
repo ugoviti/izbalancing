@@ -1,0 +1,682 @@
+#!/bin/bash
+# description: izBalancing allow your linux firewall to become a multihomed input/output loadbalanced internet gateway with failover facility
+# chkconfig: 35 98 10
+#
+# written by Ugo Viti <ugo.viti@initzero.it>
+# please visit http://www.initzero.it for commercial support
+# For README, HowTo, ChangeLog, Contributors and License go to the end of this script
+VERSION="1.3"
+VERSION_DATE="20150909"
+
+config() {
+ LAN_IF="eth0"
+ GATEWAYS="eth1:10.10.10.254:internet1 eth2:192.168.56.3:internet2 eth3:192.168.57.3:internet3"
+ BALANCED="internet1 internet2"
+ VERIFY_HOSTS="172.16.16.1 172.16.16.2 172.16.16.3" # hosts to verify for every line to detect a failover event
+ FAILOVER_HOSTS="172.16.17.1 172.16.17.2 172.16.17.3" # hosts to verify when failover happen
+}
+
+# main custom rules
+custom_rules() {
+ ## EXAMPLE RULES
+ ##>> mac address based balancing
+ #iptables -t mangle -A PREROUTING -m mac --mac-source 00:23:eb:c4:24:02 -j internet1 # packets coming from main router
+
+ ##>> ip and protocol based rules
+ #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 172.16.1.81 -j BALANCE   # balance the traffic for this host
+ #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 192.168.102.0/24 -j internet2 # force that network to internet2
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 53,123   -j internet1 # dns and ntp
+ #iptables -t mangle -A PREROUTING -p TCP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 110,143,993,995,25,465   -j internet1 # mail protocols
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 5060 -j internet2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --sport 10000:20000 -j internet2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 10000:20000 -j internet2 # voip
+
+ # ===> force all lan connection to specified gateway
+ #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j BALANCE # balance all traffic coming from lan interface
+ #iptables -t mangle -A OUTPUT     -p TCP   --dport 80 -j BALANCE # balance traffic coming from firewall it self
+
+ #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j internet2 # force all traffic coming from lan interface
+ #iptables -t mangle -A OUTPUT     -p TCP  --dport 80  -j internet2 # force traffic coming from firewall it self
+ # ===> force all lan connection to specified gateway 
+ dummy=""
+}
+
+
+# pre custom rules
+pre_onetime_custom_rules() {
+ ## if we need, reset the dafault gateway here
+ #ip route replace default via $GWIP1 # flynet2mbit
+ #ip route replace default via $GWIP2 # telecom
+
+ # rate calculation based balancing
+# iptables -t mangle -N BALANCE_RATE
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 flynet2mbit --rateest-bps1 2000kbit  --rateest-gt --rateest2 eutelia --rateest-bps2 8000kbit  -j flynet2mbit
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 flynet2mbit --rateest-bps1 2000kbit  --rateest-gt --rateest2 alice20mbit --rateest-bps2 12000kbit -j flynet2mbit
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 eutelia --rateest-bps1 8000kbit  --rateest-gt --rateest2 flynet2mbit --rateest-bps2 2000kbit  -j eutelia
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 eutelia --rateest-bps1 8000kbit  --rateest-gt --rateest2 alice20mbit --rateest-bps2 12000kbit -j eutelia
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 alice20mbit --rateest-bps1 12000kbit --rateest-gt --rateest2 flynet2mbit --rateest-bps2 2000kbit  -j alice20mbit
+# iptables -t mangle -A BALANCE_RATE -m state --state NEW -m rateest --rateest-delta --rateest1 alice20mbit --rateest-bps1 12000kbit --rateest-gt --rateest2 eutelia --rateest-bps2 8000kbit  -j alice20mbit
+
+ # example of custom balancing rule based on marked gateway 2, 3 and 5
+ #iptables -t mangle -N BALANCE_CUSTOM1
+ #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 0 -j internet2
+ #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 1 -j internet3
+ #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 2 -j internet5
+
+ dummy=""
+}
+
+pre_custom_rules() {
+ dummy=""
+}
+
+
+# post custom rules
+post_onetime_custom_rules() {
+ dummy=""
+}
+
+post_custom_rules() {
+ #iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -j RATEEST --rateest-name ${GWNM[$ID]} --rateest-interval 250ms --rateest-ewma 0.5s
+ # firewall packets itself workaround (non elegante, trovare metodo alternativo)
+ #iptables -t nat -A POSTROUTING ! -s $(find_primary_ip ${GWIF[$ID]}) -o ${GWIF[$ID]} -m mark --mark {GWTB[$ID]} -j SNAT --to-source $(find_primary_ip ${GWIF[$ID]})
+
+ dummy=""
+}
+
+
+#######################################################
+#######################################################
+## CONFIGURATION IS OVER, DON'T EDIT ANYTHING BELLOW ##
+#######################################################
+#######################################################
+
+#######################################################
+# autodetect ip number of specified network interface
+find_primary_ip() {
+  if [ -n $1 ]
+    then
+      echo $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}' | sed -e 's/\/.*//' | head -n1)
+  fi
+}
+
+
+find_broadcast() {
+  if [ -n $1 ]
+    then
+      echo -n "$(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $4}' | head -n1)"
+  fi
+}
+
+find_network() {
+  if [ -n $1 ]
+    then
+      #echo "$(find_primary_ip $1)/$(find_netmask $1)"
+      echo -n "$(ipcalc --silent --network $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}') | awk -F = '{print $2}' | head -n1)/"
+      echo -n "$(ipcalc --silent --prefix $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}') | awk -F = '{print $2}' | head -n1)"
+  fi
+}
+
+find_netmask() {
+  if [ -n $1 ]
+    then
+      #echo "$(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}' | sed -e 's/.*\///')"
+      echo -n "$(ipcalc --silent --netmask $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}')| awk -F = '{print $2}' | head -n1)"
+  fi
+}
+
+find_secondary_ip() {
+  if [ -n $1 ]
+    then
+      echo $(ip addr show $1 | grep 'inet' | grep "$1:" | awk '{print $2}' | sed -e 's/\/.*//' | head -n1)
+  fi
+}
+
+find_macaddress() {
+  if [ -n $1 ]
+    then
+      ping -W 3 -c 2 $1 >/dev/null 2>&1
+      arp -n | grep -w $1 | grep -v "incomplete" | awk '{print $3}'
+  fi
+}
+
+find_default_gateway() {
+  if [ -n $1 ]
+    then
+      echo $(ip route show default | grep ^"default" | awk '{print $3}')
+  fi
+}
+
+
+# calc total args numbers
+count_args() {
+args=0
+for arg in $@
+  do
+    let args=$args+1
+  done
+echo $args
+}
+
+global_init() {
+  ID=1
+  for GW in $GATEWAYS
+    do
+	local GWIF_LOCAL="$(echo $GW | awk -F":" '{print $1}')"
+	local GWIP_LOCAL="$(echo $GW | awk -F":" '{print $2}')"
+	local GWNM_LOCAL="$(echo $GW | awk -F":" '{print $3}')"
+
+	# put default variables into an array
+	GWTB[$ID]="$ID"			# gateway table id
+	GWIF[$ID]="$GWIF_LOCAL"		# ethernet interface
+	GWIP[$ID]="$GWIP_LOCAL"		# interface default gateway
+	GWNM[$ID]="$GWNM_LOCAL"		# gateway interface description
+	GWIFIP[$ID]="$(find_primary_ip ${GWIF[$ID]})" # interface ip
+
+	[ -z ${GWIP[$ID]} ] && GWIP[$ID]="$(find_default_gateway ${GWIF[$ID]})" # obtain default gateway ip if not specified
+	[ -z ${GWIFIP[$ID]} ] && echo "ERROR: the interface ${GWIF[${ID}]} has no IP address associated. exiting" && exit 1
+
+	# create useful variables on demand
+	eval GWTB$ID=${GWTB[$ID]}
+	eval GWIF$ID=${GWIF[$ID]}
+	eval GWIP$ID=${GWIP[$ID]}
+	eval GWNM$ID=${GWNM[$ID]}
+
+	[ -z "${GWNM[$ID]}" ] && ${GWNM[$ID]}=GWIP$ID
+
+	let ID+=1
+    done
+  GW_TOT=${#GWTB[@]}
+  #echo GW_TOT=$GW_TOT
+
+  # show debugs messages if required
+  [ "$DEBUG" -ne 0 ] && for ((ID=1;ID<=$GW_TOT;ID++)); do show_debug; done
+
+  # reset unused variables
+  unset ID GW
+
+  # assign every entry in host to check to respective interface
+  VID=1
+  for VERIFY_HOST in $VERIFY_HOSTS
+    do
+       VHOST[$VID]="$(echo $VERIFY_HOST | sed 's/,/ /g')"
+       #echo ${VHOST[$VID]}
+       let VID+=1
+    done
+  # get number of elements in the array
+  VHOSTS_TOT=${#VHOST[@]}
+
+  # assign every entry in failover host to check to respective interface
+  FID=1
+  for FAILOVER_HOST in $FAILOVER_HOSTS
+    do
+       FHOST[$FID]="$(echo $FAILOVER_HOST | sed 's/,/ /g')"
+       #echo ${FHOST[$FID]}
+       let FID+=1
+    done
+  # get number of elements in the array
+  FHOSTS_TOT=${#FHOST[@]}
+}
+
+
+#      desc: izbalancing main script handler
+#      args: $1 $2 $3 $4
+# args desc: 'action' 'table id' 'interface name' 'default gateway ip'
+#    return: none
+izbalancing() {
+  case $1 in
+        init)
+		# enable fast failover of broken gateways links (this isn't a real failover)
+		echo "10" > /proc/sys/net/ipv4/route/gc_timeout
+
+		# make this machine a Routing Machine(tm) :-)
+		echo "1"  > /proc/sys/net/ipv4/ip_forward
+
+		# disable antispoof filters
+		echo "0"  > /proc/sys/net/ipv4/conf/${GWIF[$ID]}/rp_filter
+                ;;
+        start)
+		echo -e "=== starting balancing rules: GWTB${GWTB[$ID]}=${GWTB[$ID]} GWIF${GWTB[$ID]}=${GWIF[$ID]} GWIP${GWTB[$ID]}=${GWIP[$ID]} GWNM${GWTB[$ID]}=${GWNM[$ID]}"
+		izbalancing start_route
+		izbalancing start_rule
+                ;;
+        stop)
+		echo -e "=== stopping balancing rules: GWTB${GWTB[$ID]}=${GWTB[$ID]} GWIF${GWTB[$ID]}=${GWIF[$ID]} GWIP${GWTB[$ID]}=${GWIP[$ID]} GWNM${GWTB[$ID]}=${GWNM[$ID]}"
+                izbalancing stop_route
+		izbalancing stop_rule
+                ;;
+        start_route)
+		# import from table 'main' to 'current table' the whole routing settings
+		ip route show table main | grep -Ev ^default | grep -Ev nexthop | while read ROUTE; do ip route add table ${GWTB[$ID]} $ROUTE; done
+		#ip route show table main | grep "${GWIF[$ID]}" | grep -Ev ^default | grep -Ev nexthop | while read ROUTE; do ip route add $ROUTE table ${GWTB[$ID]}; done # non funziona con rotte statiche
+		#ip route show table main | grep "scope link" | while read ROUTE; do ip route add $ROUTE table ${GWTB[$ID]}; done # non funziona con rotte statiche
+
+		# add the default interface gateway to the current table
+		ip route add default via ${GWIP[$ID]} table ${GWTB[$ID]}
+                ;;
+        start_rule)
+		start_rule_old_method() {
+		for IP in $(find_primary_ip ${GWIF[$ID]}) 
+		  do
+		    ip rule add from   $IP   lookup ${GWTB[$ID]}
+		    ip rule add fwmark ${GWTB[$ID]} lookup ${GWTB[$ID]}
+		done
+		
+		for IP_ALIAS in $(find_secondary_ip ${GWIF[$ID]}) 
+		  do
+		    ip rule add from $IP_ALIAS lookup ${GWTB[$ID]}
+		done
+		}
+
+		#start_rule_old_method
+		ip rule add fwmark ${GWTB[$ID]} lookup ${GWTB[$ID]}
+                ;;
+        stop_route)
+		# reset routing tables
+		# flush whole routing table of current table
+		if [ ! -z "$(ip route show table ${GWTB[$ID]})" ]
+		  then
+		    ip route flush table ${GWTB[$ID]}
+		fi
+
+		# reset to default single gateway
+		if [ -n "$DGATEWAY" ]
+		  then
+		    ip route del default
+		    ip route add default via $DGATEWAY
+		fi
+		# if you don't want to reset the routing cache every time you run this script, comment the following line
+		ip route flush cache
+                ;;
+        stop_rule)
+		# flush whole rule table of current table (except for fwmark rules)
+		ip rule list | grep -w "lookup ${GWTB[$ID]}" | grep -v "from all fwmark" | awk '{print $2" "$3" "$4" "$5" "$6" "$7}' | while read RULE
+		  do
+		    ip rule del $RULE
+		  done
+
+		# flush whole fwmark rule table of current table
+		ip rule list | grep -w "lookup ${GWTB[$ID]}" | grep "from all fwmark" | awk '{print $4" "$5" "$6" "$7}' | while read RULE
+		  do
+		    ip rule del $RULE
+		  done
+                ;;
+        *)
+                echo "$0: wrong method called - abort"
+                exit 1
+                ;;
+  esac
+}
+
+
+
+#      desc: izbalancing rules (iptables, routing, etc...)
+#      args: $1 $2 $3 $4
+# args desc: 'action' 'table id' 'interface name' 'default gateway ip'
+#    return: none
+izbalancing_rules() {
+  case $1 in
+        pre_onetime)
+		# create the default balancing chains
+		iptables -t mangle -N BALANCE
+
+		# test
+		# create the RESTOREMARK
+		iptables -t mangle -N RESTOREMARK
+		iptables -t mangle -A RESTOREMARK -j CONNMARK --restore-mark
+		#iptables -t mangle -A RESTOREMARK -j LOG --log-prefix 'restore-mark: ' --log-level info -m limit --limit 60/minute --limit-burst 1
+
+		iptables -t mangle -A PREROUTING -m connmark ! --mark 0 -j RESTOREMARK
+		iptables -t mangle -A OUTPUT     -m connmark ! --mark 0 -j RESTOREMARK
+		;;
+        pre_onetime_custom)
+		pre_onetime_custom_rules
+		;;
+        pre)
+		# create the gateway ip chain for for connections to specified gateway
+
+		iptables -t mangle -N ${GWNM[$ID]}
+
+		# failover host management
+                if [ ! -z ${FHOST[$ID]} ]; then
+		  iptables -t mangle -A PREROUTING -d ${FHOST[$ID]} -j ${GWNM[$ID]}
+		  iptables -t mangle -A OUTPUT -d ${FHOST[$ID]} -j ${GWNM[$ID]}
+		  iptables -t mangle -A ${GWNM[$ID]} -d ${FHOST[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                elif [ ! -z ${FHOST[1]} ]; then
+		  echo "WARNING: the interface ${GWIF[$ID]} has not failover host associated, using the first in the list: ${FHOST[1]}"
+		  iptables -t mangle -A PREROUTING -d ${FHOST[1]} -j ${GWNM[1]}
+		  iptables -t mangle -A OUTPUT -d ${FHOST[1]} -j ${GWNM[1]}
+		  iptables -t mangle -A ${GWNM[$ID]} -d ${FHOST[1]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                else
+		  echo "WARNING: the interface ${GWIF[$ID]} has not failover host associated, izping will not able to recovery the connetion after a failure"
+                fi
+
+		# verify host management
+                if [ ! -z ${VHOST[$ID]} ]; then
+		  iptables -t mangle -A PREROUTING -d ${VHOST[$ID]} -j ${GWNM[$ID]}
+		  iptables -t mangle -A OUTPUT -d ${VHOST[$ID]} -j ${GWNM[$ID]}
+		  #iptables -t mangle -A ${GWNM[$ID]} -d ${VHOST[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                elif [ ! -z ${VHOST[1]} ]; then
+		  echo "WARNING: the interface ${GWIF[$ID]} has not verify host associated, using the first in the list: ${VHOST[1]}"
+		  iptables -t mangle -A PREROUTING -d ${VHOST[1]} -j ${GWNM[$ID]}
+		  iptables -t mangle -A OUTPUT -d ${VHOST[1]} -j ${GWNM[$ID]}
+		  #iptables -t mangle -A ${GWNM[$ID]} -d ${VHOST[1]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                else
+		  echo "WARNING: the interface ${GWIF[$ID]} has not verify host associated, izping will not able to recovery the connetion after a failure"
+                fi
+
+
+		iptables -t mangle -A ${GWNM[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+		iptables -t mangle -A ${GWNM[$ID]} -j CONNMARK --save-mark
+		#iptables -t mangle -A ${GWTNM} -j LOG --log-prefix "GWIP${GWTB[$ID]}: " --log-level info
+
+		MAC_ADDRESS="$(find_macaddress ${GWIP[$ID]})"
+                if [ -n "$MAC_ADDRESS" ]
+                  then
+			# mac address based rules
+			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -m mac --mac-source $MAC_ADDRESS -j ${GWNM[$ID]}
+			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -j ${GWNM[$ID]}
+		  else
+			# device name based rules
+			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -j ${GWNM[$ID]}
+		fi
+		;;
+        main_onetime_custom)
+		custom_rules
+                ;;
+        post)
+		iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m mark --mark 0 -j ${GWNM[$ID]}
+		post_custom_rules
+                ;;
+        post_onetime_custom)
+		post_onetime_custom_rules
+		;;
+        post_onetime)
+		# round robin based balancing
+		BALANCE_CNT=0
+		for GW in $BALANCED
+		  do
+		    iptables -t mangle -A BALANCE -m state --state NEW -m statistic --mode nth --every $BALANCE_TOT --packet $BALANCE_CNT -j $GW
+		    let BALANCE_CNT+=1
+		  done
+
+		#iptables -t mangle -A POSTROUTING -j CONNMARK --save-mark
+                ;;
+        *)
+                echo "$0: wrong method called - abort"
+                exit 1
+                ;;
+  esac
+}
+
+
+stop_iptables() {
+	iptables -t mangle -F
+	iptables -t mangle -X
+}
+
+stop_all() {
+	global_init
+	stop_iptables
+        for ((ID=1;ID<=$GW_TOT;ID++)); do
+	  izbalancing stop
+        done
+}
+
+start_all() {
+	global_init
+	izbalancing_rules pre_onetime
+        for ((ID=1;ID<=$GW_TOT;ID++)); do
+          # show debugs messages if required
+          [ "$DEBUG" -ne 0 ] && show_debug
+	  izbalancing init
+	  izbalancing start
+	  izbalancing_rules pre
+	  izbalancing_rules post
+        done
+	izbalancing_rules pre_onetime_custom
+	izbalancing_rules main_onetime_custom
+	izbalancing_rules post_onetime_custom
+	izbalancing_rules post_onetime
+}
+
+env() {
+# default commands path and variables
+        PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin:/usr/local/sbin:/root/bin
+ BALANCE_TOT="$(count_args $BALANCED)"
+GATEWAYS_TOT="$(count_args $GATEWAYS)"
+       DEBUG="0"
+}
+
+show_debug() {
+  echo "=================== DEBUG ====================="
+  echo "  GWTB[$ID]=${GWTB[$ID]}		# Table ID"
+  echo "  GWIF[$ID]=${GWIF[$ID]}		# Interface"
+  echo "GWIFIP[$ID]=${GWIFIP[$ID]}	# Interface IP"
+  echo "  GWIP[$ID]=${GWIP[$ID]}	# Gateway IP"
+  echo "  GWNM[$ID]=${GWNM[$ID]}	# Interface Name"
+  echo "-----------------------------------------------"
+}
+
+
+
+###############################################################################################
+## valid script input from command line
+
+# command prompt menu
+usage(){
+  local progname=$0
+  echo "izBalancing :: Linux firewall/router bash script featuring in/out multihomed loadbalanced internet gateway traffic with failover facility
+written by Ugo Viti <ugo.viti@initzero.it>
+version: $VERSION released: $VERSION_DATE
+
+usage: $progname [options]
+
+Option:    Description:
+-----------------------------------------------
+  start          Start the izbalancing subsystem
+  stop           Stop the izbalancing subsystem
+  restart        Restart the izbalancing subsystem
+  config-routes  Restart routes config
+  -h             Display this help menu
+  -V             Display software version
+
+usage: $0 [OPTIONS]"
+}
+
+
+###################################################################
+#################### default program menu and arguments validations
+NO_ARGS=0
+_OPTERROR=65
+
+if [ $# -eq "$NO_ARGS" ]  # Script invoked with no command-line args?
+then
+  usage
+  exit $E_OPTERROR        # Exit and explain usage, if no argument(s) given.
+fi
+# Usage: scriptname -options
+# Note: dash (-) necessary
+
+
+case $1 in
+    stop)
+	config
+	env
+	stop_all
+        if [ -x /etc/init.d/izping ]; then
+                echo "=== Stop iZPing Daemon"
+                /etc/init.d/izping -k -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Stopped"
+        fi
+        ;;
+    start)
+	config
+	env
+	stop_all
+	start_all
+        if [ -x /etc/init.d/izping ]; then
+                echo "=== Start iZPing Daemon"
+                /etc/init.d/izping -d -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Started"
+        fi
+        ;;
+    restart)
+	config
+	env
+	stop_all
+	start_all
+        if [ -x /etc/init.d/izping ]; then
+                echo "=== Stop iZPing Daemon"
+                /etc/init.d/izping -k -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Stopped"
+                echo "=== Start iZPing Daemon"
+                /etc/init.d/izping -d -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Started"
+        fi
+        ;;
+    config-routes)
+        config
+        env
+        global_init
+        for ((ID=1;ID<=$GW_TOT;ID++)); do
+          # show debugs messages if required
+          [ "$DEBUG" -ne 0 ] && show_debug
+          izbalancing stop_route
+          izbalancing start_route
+        done
+        ;;
+    config)
+	config
+	;;
+    -V)
+	echo $VERSION
+	;;
+     *)
+	usage
+        exit 1
+esac
+
+## The End
+###############################################################################################
+                                                               
+
+# License:
+# ----------------------------------------------------------------------------
+# Written by: Ugo Viti <ugo.viti@initzero.it>
+# visit http://www.initzero.it for commercial support
+# 
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 3 of the License, or
+# (at your option) any later version.
+# 
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+# ----------------------------------------------------------------------------
+
+
+# What is this?
+# =============
+# This bash script allow you to easly and fastly configure a complex Load Balancing Multi Homed Internet Gateway
+# for inbound and outbound traffic
+
+
+# Key Features:
+# =============
+# - Multiple balanced default gateway configuration
+# - Load Balanced outgoing connections from LAN to INTERNET connections
+# - Management of multiple incoming connection from many INTERNET ISP lines to DMZ/LAN Servers
+# - SystemV compliant script... you can run easly at boot up (like Red Hat, Fedora, SuSE, Mandrake, etc...)
+# - Automatically discover your local IP addresses... you can change your IP without reconfigure this script, just restart
+# - Start and Stop cleanly your multihomed configuration with simple command (izbalancing start|stop|restart)
+# - Adding new internet connections is very fast and easy
+# - You must provide the interface name, router ip address and a descriptive name only
+# - If the izping daemon is installed into /etc/rc.d/init.d/ it will be used for automatic failover and recovery of internet lines
+
+
+# Requirements:
+# =============
+# - GNU/Linux Firewall running Kernel >=2.6.10 (with iptables module CONNMARK available)
+# - Bash Shell >= 2.0
+# - Standard GNU/Linux coreutils utilities (cat, echo, grep, if, etc...)
+# - GNU Version of awk and sed utilities
+# - GNU/Linux Netfilter user space utilities (iptables >= 1.2.11)
+# - iproute2 utilities
+# - Two or more Internet connections (also from different ISPs and IP classes)
+# - An ethernet card for each ISP Router
+
+
+# Tested On:
+# ==========
+# - GNU/Linux CentOS 6 with 3 internet connections
+
+
+# Network Topology Example:
+# =========================
+#                                                                                                                                                                     
+# +----------+                       +-------------------+  192.168.254.254+----------+             +-------+                
+# | Server x +<--+                   | 192.168.254.1:eth1+<--------------->+ Router 1 +<----------->+ ISP 1 +<--+            
+# +----------+   |                   |                   |                 +----------+ ADSL line 1 +-------+   |            
+#                |                   |    GNU/Linux      |                                                      |            
+# +----------+   |   192.168.1.1:eth0|                   |  192.168.253.254+----------+             +-------+   |            
+# | Server y +<--+---+LAN+---------->+ 192.168.253.1:eth2+<--------------->+ Router 2 +<----------->+ ISP 2 +<--+---->INTERNET
+# +----------+   |                   |                   |                 +----------+ HDSL line 2 +-------+   |            
+#                |                   |     Firewall      |                                                      |            
+# +----------+   |                   |                   |  192.168.nnn.nnn+----------+             +-------+   |            
+# | Server z +<--+                   | 192.168.nnn.n:ethn+<--------------->+ Router n +<----------->+ ISP n +<--+            
+# +----------+                       +-------------------+                 +----------+  T3 line n  +-------+                
+
+
+# Installation:
+# =============
+# 1) If using a Red Hat Linux based distribution, just copy the izbalancing script into /etc/rc./init.d/ and run:
+#    chmod 755 /etc/rc./init.d/izbalancing
+#    chkconfig izbalancing on
+# 2) Configure or add the following variables into this script:
+#    GATEWAYS="interface1:gatewayip1:name1 interface2:gatewayip2:name2 interface3:gatewayip3:name3"
+#    BALANCED="name1 name2"
+#    VERIFY_HOSTS="ip1 ip2 ip3"
+#    FAILOVER_HOSTS="ip1 ip2 ip3"
+# 3) Comment out the iptables rules as you need
+# 4) usable special variables created on demand using the order specified in the GATEWAYS variable:
+#    $GWIFx = interface name (ex. GWIF1=eth1, GWIF2=eth2 so on...)
+#    $GWIPx = gateway ip address (ex. GWIP1=10.1.1.1, GWIP2=10.1.2.1 so on...)
+# 5) If the izping daemon script is installed into /etc/rc./init.d/, izbalancing will use it to make
+#    automatic failover and recovery of lines, checking the ip addresses specified into VERIFY_HOSTS and 
+#    FAILOVER_HOSTS variables
+
+
+# TODO:
+# =====
+# - Suggestions are welcome :-)
+#
+
+
+# Contributors:
+# =============
+# - If you want help me enhancing this script, please send patches to my mail address.
+#
+
+
+# Thanks:
+# =======
+# - Linux Advanced Routing & Traffic Control <http://lartc.org>
+# - Nguyễn Đình Nam <nguyendinhnam@gmailNOSPAM.com> of <http://routeskeeper.sourceforge.net/Routeskeeper> for your fantastic tips!
+
+
+# ChangeLog:
+# ==========
+# 20131011 - 1.2 - added new command line option: 'config-routes' to reconfig only routing system without restarting all balancing rules
+# 20130603 - 1.1 - misc bugfixes (internal release)
+# 20130102 - 1.0 - first public release
+# 20121023 - implemented auto failover functions via izping daemon
+# 20101125 - major code clean up and restructuration
+# 20050712 - some cleanups
+# 20050708 - first version
+
