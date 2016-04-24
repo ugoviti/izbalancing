@@ -46,9 +46,9 @@ for inbound and outbound traffic
 ```
 
 ## Installation:
-- If using a Red Hat Linux based distribution, just copy the izbalancing script into /etc/rc./init.d/ and run:
+- If using a Red Hat Linux based distribution, just copy the izbalancing script into `/etc/init.d/` and run:
 ```
-  chmod 755 /etc/rc./init.d/izbalancing
+  chmod 755 /etc/init.d/izbalancing
   chkconfig izbalancing on
 ```
 - Configure or add the following variables into this script:
@@ -56,7 +56,7 @@ for inbound and outbound traffic
   GATEWAYS="interface1:gatewayip1:name1 interface2:gatewayip2:name2 interface3:gatewayip3:name3"
   BALANCED="name1 name2"
   VERIFY_HOSTS="ip1 ip2 ip3"
-  FAILOVER_HOSTS="ip1 ip2 ip3"
+  FAILOVER_HOSTS="ip4 ip5 ip6"
 ```
 - Comment out the iptables rules as you need
 
@@ -66,4 +66,4 @@ for inbound and outbound traffic
   $GWIPx = gateway ip address (ex. GWIP1=10.1.1.1, GWIP2=10.1.2.1 so on...)
 ```
 
-- If the `izping` daemon script is installed into `/etc/rc./init.d/`, izbalancing will use it to make automatic failover and recovery of lines, checking the ip addresses specified into `VERIFY_HOSTS` and `FAILOVER_HOSTS` variables
+- If the `izping` daemon script is installed into `/etc/init.d/`, izbalancing will use it to make automatic failover and recovery of lines, checking the ip addresses specified into `VERIFY_HOSTS` and `FAILOVER_HOSTS` variables
