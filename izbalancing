@@ -478,6 +478,7 @@ Option:    Description:
   stop           Stop the izbalancing subsystem
   restart        Restart the izbalancing subsystem
   config-routes  Restart routes config
+  status <line>  Show line status
   -h             Display this help menu
   -V             Display software version
 
@@ -545,6 +546,23 @@ case $1 in
           izbalancing stop_route
           izbalancing start_route
         done
+        ;;
+    status)
+        config
+        env
+        global_init
+        for ((ID=1;ID<=$GW_TOT;ID++)); do
+          # show debugs messages if required
+          [ "$DEBUG" -ne 0 ] && show_debug
+          bstatus="$(iptables -L ${GWNM[$ID]} -v -n -t mangle --line-numbers | grep ^1 | awk '{ print $NF }' | sed 's/0x//')"
+          [ $bstatus = ${GWTB[$ID]} ] && lstatus="UP" || lstatus="DOWN"
+          if [ -z $2 ] ; then
+            echo "Line: ${GWNM[$ID]} Status: $lstatus"
+            unset bstatus lstatus
+           else
+            [ $2 = ${GWNM[$ID]} ] && echo $lstatus
+         fi
+        done 
         ;;
     config)
 	config
