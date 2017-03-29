@@ -5,13 +5,13 @@
 # written by Ugo Viti <ugo.viti@initzero.it>
 # please visit http://www.initzero.it for commercial support
 # For README, HowTo, ChangeLog, Contributors and License go to the end of this script
-VERSION="1.3"
-VERSION_DATE="20150909"
+VERSION="1.4"
+VERSION_DATE="20170329"
 
 config() {
  LAN_IF="eth0"
- GATEWAYS="eth1:10.10.10.254:internet1 eth2:192.168.56.3:internet2 eth3:192.168.57.3:internet3"
- BALANCED="internet1 internet2"
+ GATEWAYS="eth1:10.10.10.254:wan1 eth2:192.168.56.3:wan2 eth3:192.168.57.3:wan3"
+ BALANCED="wan1 wan2"
  VERIFY_HOSTS="172.16.16.1 172.16.16.2 172.16.16.3" # hosts to verify for every line to detect a failover event
  FAILOVER_HOSTS="172.16.17.1 172.16.17.2 172.16.17.3" # hosts to verify when failover happen
 }
@@ -20,23 +20,23 @@ config() {
 custom_rules() {
  ## EXAMPLE RULES
  ##>> mac address based balancing
- #iptables -t mangle -A PREROUTING -m mac --mac-source 00:23:eb:c4:24:02 -j internet1 # packets coming from main router
+ #iptables -t mangle -A PREROUTING -m mac --mac-source 00:23:eb:c4:24:02 -j wan1 # packets coming from main router
 
  ##>> ip and protocol based rules
  #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 172.16.1.81 -j BALANCE   # balance the traffic for this host
- #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 192.168.102.0/24 -j internet2 # force that network to internet2
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 53,123   -j internet1 # dns and ntp
- #iptables -t mangle -A PREROUTING -p TCP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 110,143,993,995,25,465   -j internet1 # mail protocols
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 5060 -j internet2 # voip
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --sport 10000:20000 -j internet2 # voip
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 10000:20000 -j internet2 # voip
+ #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 192.168.102.0/24 -j wan2 # force that network to wan2
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 53,123   -j wan1 # dns and ntp
+ #iptables -t mangle -A PREROUTING -p TCP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 110,143,993,995,25,465   -j wan1 # mail protocols
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 5060 -j wan2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --sport 10000:20000 -j wan2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 10000:20000 -j wan2 # voip
 
  # ===> force all lan connection to specified gateway
  #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j BALANCE # balance all traffic coming from lan interface
  #iptables -t mangle -A OUTPUT     -p TCP   --dport 80 -j BALANCE # balance traffic coming from firewall it self
 
- #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j internet2 # force all traffic coming from lan interface
- #iptables -t mangle -A OUTPUT     -p TCP  --dport 80  -j internet2 # force traffic coming from firewall it self
+ #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j wan2 # force all traffic coming from lan interface
+ #iptables -t mangle -A OUTPUT     -p TCP  --dport 80  -j wan2 # force traffic coming from firewall it self
  # ===> force all lan connection to specified gateway 
  dummy=""
 }
@@ -59,8 +59,8 @@ pre_onetime_custom_rules() {
 
  # example of custom balancing rule based on marked gateway 2, 3 and 5
  #iptables -t mangle -N BALANCE_CUSTOM1
- #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 0 -j internet2
- #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 1 -j internet3
+ #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 0 -j wan2
+ #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 1 -j wan3
  #iptables -t mangle -A BALANCE_CUSTOM1 -m mark --mark 0 -m state --state NEW -m statistic --mode nth --every 3 --packet 2 -j internet5
 
  dummy=""
