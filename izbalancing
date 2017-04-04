@@ -9,11 +9,19 @@ VERSION="1.4"
 VERSION_DATE="20170329"
 
 config() {
- LAN_IF="eth0"
- GATEWAYS="eth1:10.10.10.254:wan1 eth2:192.168.56.3:wan2 eth3:192.168.57.3:wan3"
+ GATEWAY[1]="dummy1:10.0.1.1:wan1"
+ GATEWAY[2]="dummy2:10.0.2.1:wan2"
+ GATEWAY[3]="dummy3:10.0.3.1:wan3"
+ GATEWAY[4]="dummy4:10.0.4.1:wan4"
+
+ VERIFY[1]="8.8.8.8"
+ VERIFY[2]="8.8.4.4"
+
+ FAILOVER[1]="208.67.222.222"
+ FAILOVER[2]="208.67.220.220"
+
  BALANCED="wan1 wan2"
- VERIFY_HOSTS="172.16.16.1 172.16.16.2 172.16.16.3" # hosts to verify for every line to detect a failover event
- FAILOVER_HOSTS="172.16.17.1 172.16.17.2 172.16.17.3" # hosts to verify when failover happen
+ LAN="eth0"
 }
 
 # main custom rules
@@ -23,19 +31,19 @@ custom_rules() {
  #iptables -t mangle -A PREROUTING -m mac --mac-source 00:23:eb:c4:24:02 -j wan1 # packets coming from main router
 
  ##>> ip and protocol based rules
- #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 172.16.1.81 -j BALANCE   # balance the traffic for this host
- #iptables -t mangle -A PREROUTING -p ALL -i $LAN_IF -s 192.168.102.0/24 -j wan2 # force that network to wan2
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 53,123   -j wan1 # dns and ntp
- #iptables -t mangle -A PREROUTING -p TCP -i $LAN_IF -s 172.16.1.1 -m multiport --dports 110,143,993,995,25,465   -j wan1 # mail protocols
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 5060 -j wan2 # voip
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --sport 10000:20000 -j wan2 # voip
- #iptables -t mangle -A PREROUTING -p UDP -i $LAN_IF -d voip.internetcalls.com --dport 10000:20000 -j wan2 # voip
+ #iptables -t mangle -A PREROUTING -p ALL -i $LAN -s 172.16.1.81 -j BALANCE   # balance the traffic for this host
+ #iptables -t mangle -A PREROUTING -p ALL -i $LAN -s 192.168.102.0/24 -j wan2 # force that network to wan2
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN -s 172.16.1.1 -m multiport --dports 53,123   -j wan1 # dns and ntp
+ #iptables -t mangle -A PREROUTING -p TCP -i $LAN -s 172.16.1.1 -m multiport --dports 110,143,993,995,25,465   -j wan1 # mail protocols
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN -d voip.internetcalls.com --dport 5060 -j wan2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN -d voip.internetcalls.com --sport 10000:20000 -j wan2 # voip
+ #iptables -t mangle -A PREROUTING -p UDP -i $LAN -d voip.internetcalls.com --dport 10000:20000 -j wan2 # voip
 
  # ===> force all lan connection to specified gateway
- #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j BALANCE # balance all traffic coming from lan interface
+ #iptables -t mangle -A PREROUTING -p ALL  -i $LAN  -j BALANCE # balance all traffic coming from lan interface
  #iptables -t mangle -A OUTPUT     -p TCP   --dport 80 -j BALANCE # balance traffic coming from firewall it self
 
- #iptables -t mangle -A PREROUTING -p ALL  -i $LAN_IF  -j wan2 # force all traffic coming from lan interface
+ #iptables -t mangle -A PREROUTING -p ALL  -i $LAN  -j wan2 # force all traffic coming from lan interface
  #iptables -t mangle -A OUTPUT     -p TCP  --dport 80  -j wan2 # force traffic coming from firewall it self
  # ===> force all lan connection to specified gateway 
  dummy=""
@@ -79,7 +87,7 @@ post_onetime_custom_rules() {
 post_custom_rules() {
  #iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -j RATEEST --rateest-name ${GWNM[$ID]} --rateest-interval 250ms --rateest-ewma 0.5s
  # firewall packets itself workaround (non elegante, trovare metodo alternativo)
- #iptables -t nat -A POSTROUTING ! -s $(find_primary_ip ${GWIF[$ID]}) -o ${GWIF[$ID]} -m mark --mark {GWTB[$ID]} -j SNAT --to-source $(find_primary_ip ${GWIF[$ID]})
+ #iptables -t nat -A POSTROUTING ! -s $(find_primary_ip ${GWIF[$ID]}) -o ${GWIF[$ID]} -m mark --mark {GWID[$ID]} -j SNAT --to-source $(find_primary_ip ${GWIF[$ID]})
 
  dummy=""
 }
@@ -94,23 +102,20 @@ post_custom_rules() {
 #######################################################
 # autodetect ip number of specified network interface
 find_primary_ip() {
-  if [ -n $1 ]
-    then
-      echo $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}' | sed -e 's/\/.*//' | head -n1)
+  if [ -n $1 ] ; then
+      echo $(ip -f inet addr show $1 | grep -Po 'inet \K[\d.]+' | head -n1)
   fi
 }
 
 
 find_broadcast() {
-  if [ -n $1 ]
-    then
-      echo -n "$(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $4}' | head -n1)"
+  if [ -n $1 ]; then
+      echo -n "$(ip addr show $1 | grep -w 'inet' | grep -v ":" | awk '{print $4}' | head -n1)"
   fi
 }
 
 find_network() {
-  if [ -n $1 ]
-    then
+  if [ -n $1 ]; then
       #echo "$(find_primary_ip $1)/$(find_netmask $1)"
       echo -n "$(ipcalc --silent --network $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}') | awk -F = '{print $2}' | head -n1)/"
       echo -n "$(ipcalc --silent --prefix $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}') | awk -F = '{print $2}' | head -n1)"
@@ -118,31 +123,27 @@ find_network() {
 }
 
 find_netmask() {
-  if [ -n $1 ]
-    then
+  if [ -n $1 ]; then
       #echo "$(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}' | sed -e 's/.*\///')"
       echo -n "$(ipcalc --silent --netmask $(ip addr show $1 | grep 'inet' | grep -v ":" | awk '{print $2}')| awk -F = '{print $2}' | head -n1)"
   fi
 }
 
-find_secondary_ip() {
-  if [ -n $1 ]
-    then
-      echo $(ip addr show $1 | grep 'inet' | grep "$1:" | awk '{print $2}' | sed -e 's/\/.*//' | head -n1)
+find_all_ip() {
+  if [ -n $1 ]; then
+      echo $(ip -f inet addr show $1 | grep -Po 'inet \K[\d.]+'| tr '\n' ' ')
   fi
 }
 
 find_macaddress() {
-  if [ -n $1 ]
-    then
+  if [ -n $1 ]; then
       ping -W 3 -c 2 $1 >/dev/null 2>&1
       arp -n | grep -w $1 | grep -v "incomplete" | awk '{print $3}'
   fi
 }
 
 find_default_gateway() {
-  if [ -n $1 ]
-    then
+  if [ -n $1 ]; then
       echo $(ip route show default | grep ^"default" | awk '{print $3}')
   fi
 }
@@ -159,63 +160,38 @@ echo $args
 }
 
 global_init() {
-  ID=1
-  for GW in $GATEWAYS
-    do
-	local GWIF_LOCAL="$(echo $GW | awk -F":" '{print $1}')"
-	local GWIP_LOCAL="$(echo $GW | awk -F":" '{print $2}')"
-	local GWNM_LOCAL="$(echo $GW | awk -F":" '{print $3}')"
+  for ID in ${!GATEWAY[@]}; do
+	local GW="${GATEWAY[$ID]}"
 
 	# put default variables into an array
-	GWTB[$ID]="$ID"			# gateway table id
-	GWIF[$ID]="$GWIF_LOCAL"		# ethernet interface
-	GWIP[$ID]="$GWIP_LOCAL"		# interface default gateway
-	GWNM[$ID]="$GWNM_LOCAL"		# gateway interface description
-	GWIFIP[$ID]="$(find_primary_ip ${GWIF[$ID]})" # interface ip
+	GWID[$ID]="$ID"						# gateway table id
+	GWIF[$ID]="$(echo $GW | awk -F":" '{print $1}')"	# ethernet interface
+	if ! ip a show ${GWIF[$ID]} >/dev/null 2>&1 ; then echo "ERROR: the interface ${GWIF[${ID}]} of GATEWAY[$ID]=\"$GW\" doesn't exist. exiting"; exit 1; fi
+	GWIP[$ID]="$(echo $GW | awk -F":" '{print $2}')"	# default gateway ip
+	GWNM[$ID]="$(echo $GW | awk -F":" '{print $3}')"	# gateway interface description
+	GWNW[$ID]="$(find_network ${GWIF[$ID]})"		# interface network
+	IFIP[$ID]="$(find_primary_ip ${GWIF[$ID]})"		# interface ip
 
-	[ -z ${GWIP[$ID]} ] && GWIP[$ID]="$(find_default_gateway ${GWIF[$ID]})" # obtain default gateway ip if not specified
-	[ -z ${GWIFIP[$ID]} ] && echo "ERROR: the interface ${GWIF[${ID}]} has no IP address associated. exiting" && exit 1
+	[ -z "${IFIP[$ID]}" ] && echo "ERROR: the interface ${GWIF[${ID}]} of GATEWAY[$ID]=\"$GW\" has no IP address associated. exiting" && exit 1
+	[ -z "${GWIP[$ID]}" ] && GWIP[$ID]="$(find_default_gateway ${GWIF[$ID]})" # obtain default gateway ip if not specified
 
 	# create useful variables on demand
-	eval GWTB$ID=${GWTB[$ID]}
+	eval GWID$ID=${GWID[$ID]}
 	eval GWIF$ID=${GWIF[$ID]}
 	eval GWIP$ID=${GWIP[$ID]}
 	eval GWNM$ID=${GWNM[$ID]}
 
 	[ -z "${GWNM[$ID]}" ] && ${GWNM[$ID]}=GWIP$ID
-
-	let ID+=1
+	unset GW
     done
-  GW_TOT=${#GWTB[@]}
-  #echo GW_TOT=$GW_TOT
+  # reset unused variables
+  unset ID
+
+  # print gateways array index id
+  #echo GWTOT = ${#GWID[@]}
 
   # show debugs messages if required
-  [ "$DEBUG" -ne 0 ] && for ((ID=1;ID<=$GW_TOT;ID++)); do show_debug; done
-
-  # reset unused variables
-  unset ID GW
-
-  # assign every entry in host to check to respective interface
-  VID=1
-  for VERIFY_HOST in $VERIFY_HOSTS
-    do
-       VHOST[$VID]="$(echo $VERIFY_HOST | sed 's/,/ /g')"
-       #echo ${VHOST[$VID]}
-       let VID+=1
-    done
-  # get number of elements in the array
-  VHOSTS_TOT=${#VHOST[@]}
-
-  # assign every entry in failover host to check to respective interface
-  FID=1
-  for FAILOVER_HOST in $FAILOVER_HOSTS
-    do
-       FHOST[$FID]="$(echo $FAILOVER_HOST | sed 's/,/ /g')"
-       #echo ${FHOST[$FID]}
-       let FID+=1
-    done
-  # get number of elements in the array
-  FHOSTS_TOT=${#FHOST[@]}
+  [ "$DEBUG" -ne 0 ] && for ID in ${!GATEWAY[@]}; do show_debug; done
 }
 
 
@@ -233,73 +209,58 @@ izbalancing() {
 		echo "1"  > /proc/sys/net/ipv4/ip_forward
 
 		# disable antispoof filters
-		echo "0"  > /proc/sys/net/ipv4/conf/${GWIF[$ID]}/rp_filter
+		#echo "0"  > /proc/sys/net/ipv4/conf/${GWIF[$ID]}/rp_filter
+		for f in /proc/sys/net/ipv4/conf/*/rp_filter; do echo 0 > $f; done
                 ;;
         start)
-		echo -e "=== starting balancing rules: GWTB${GWTB[$ID]}=${GWTB[$ID]} GWIF${GWTB[$ID]}=${GWIF[$ID]} GWIP${GWTB[$ID]}=${GWIP[$ID]} GWNM${GWTB[$ID]}=${GWNM[$ID]}"
-		izbalancing start_route
-		izbalancing start_rule
+		echo -e "=== starting balancing rules: GWID${GWID[$ID]}=${GWID[$ID]} GWIF${GWID[$ID]}=${GWIF[$ID]} GWIP${GWID[$ID]}=${GWIP[$ID]} GWNM${GWID[$ID]}=${GWNM[$ID]}"
+		izbalancing start_routes
+		izbalancing start_rules
                 ;;
         stop)
-		echo -e "=== stopping balancing rules: GWTB${GWTB[$ID]}=${GWTB[$ID]} GWIF${GWTB[$ID]}=${GWIF[$ID]} GWIP${GWTB[$ID]}=${GWIP[$ID]} GWNM${GWTB[$ID]}=${GWNM[$ID]}"
+		echo -e "=== stopping balancing rules: GWID${GWID[$ID]}=${GWID[$ID]} GWIF${GWID[$ID]}=${GWIF[$ID]} GWIP${GWID[$ID]}=${GWIP[$ID]} GWNM${GWID[$ID]}=${GWNM[$ID]}"
                 izbalancing stop_route
 		izbalancing stop_rule
                 ;;
-        start_route)
-		# import from table 'main' to 'current table' the whole routing settings
-		ip route show table main | grep -Ev ^default | grep -Ev nexthop | while read ROUTE; do ip route add table ${GWTB[$ID]} $ROUTE; done
-		#ip route show table main | grep "${GWIF[$ID]}" | grep -Ev ^default | grep -Ev nexthop | while read ROUTE; do ip route add $ROUTE table ${GWTB[$ID]}; done # non funziona con rotte statiche
-		#ip route show table main | grep "scope link" | while read ROUTE; do ip route add $ROUTE table ${GWTB[$ID]}; done # non funziona con rotte statiche
-
+        start_routes)
 		# add the default interface gateway to the current table
-		ip route add default via ${GWIP[$ID]} table ${GWTB[$ID]}
-                ;;
-        start_rule)
-		start_rule_old_method() {
-		for IP in $(find_primary_ip ${GWIF[$ID]}) 
-		  do
-		    ip rule add from   $IP   lookup ${GWTB[$ID]}
-		    ip rule add fwmark ${GWTB[$ID]} lookup ${GWTB[$ID]}
-		done
-		
-		for IP_ALIAS in $(find_secondary_ip ${GWIF[$ID]}) 
-		  do
-		    ip rule add from $IP_ALIAS lookup ${GWTB[$ID]}
-		done
-		}
+                ip route add default via ${GWIP[$ID]} table ${GWID[$ID]}
 
-		#start_rule_old_method
-		ip rule add fwmark ${GWTB[$ID]} lookup ${GWTB[$ID]}
+                # import from table 'main' to 'current table' the whole routing settings
+                ip route show scope link proto kernel | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done
+                #ip route show table main | grep -Ev '(^default|ppp)' | grep -Ev nexthop | grep -Ev ^169.254.0.0/16 | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done
+                ;;
+        start_rules)
+                PRIO="${GWID[$ID]}00"
+                ip rule add fwmark ${GWID[$ID]} lookup ${GWID[$ID]} prio $PRIO
+                ;;
+        start_rules_post)
+                PRIO="1${GWID[$ID]}00"
+                for IP in $(find_all_ip ${GWIF[$ID]}) ; do
+                    ip rule add from $IP table ${GWID[$ID]} prio $PRIO
+                    let PRIO+=1
+                done
                 ;;
         stop_route)
-		# reset routing tables
-		# flush whole routing table of current table
-		if [ ! -z "$(ip route show table ${GWTB[$ID]})" ]
-		  then
-		    ip route flush table ${GWTB[$ID]}
-		fi
+                # reset routing tables
+                # flush whole routing table of current table
+                if [ ! -z "$(ip route show table ${GWID[$ID]})" ]; then
+                    ip route flush table ${GWID[$ID]}
+                fi
 
-		# reset to default single gateway
-		if [ -n "$DGATEWAY" ]
-		  then
-		    ip route del default
-		    ip route add default via $DGATEWAY
-		fi
-		# if you don't want to reset the routing cache every time you run this script, comment the following line
-		ip route flush cache
+                # reset to default single gateway
+                if [ -n "$DEFAULTGW" ] ; then
+                    ip route del default
+                    ip route add default via $DEFAULTGW
+                fi
+                # if you don't want to reset the routing cache every time you run this script, comment the following line
+                ip route flush cache
                 ;;
         stop_rule)
-		# flush whole rule table of current table (except for fwmark rules)
-		ip rule list | grep -w "lookup ${GWTB[$ID]}" | grep -v "from all fwmark" | awk '{print $2" "$3" "$4" "$5" "$6" "$7}' | while read RULE
-		  do
-		    ip rule del $RULE
-		  done
-
-		# flush whole fwmark rule table of current table
-		ip rule list | grep -w "lookup ${GWTB[$ID]}" | grep "from all fwmark" | awk '{print $4" "$5" "$6" "$7}' | while read RULE
-		  do
-		    ip rule del $RULE
-		  done
+                # flush whole rule table of current table (except for fwmark rules)
+                ip rule list | grep -w "lookup ${GWID[$ID]}" | awk '{$1="";print}' | while read RULE; do 
+                        ip rule del $RULE 
+                done
                 ;;
         *)
                 echo "$0: wrong method called - abort"
@@ -307,7 +268,6 @@ izbalancing() {
                 ;;
   esac
 }
-
 
 
 #      desc: izbalancing rules (iptables, routing, etc...)
@@ -320,14 +280,11 @@ izbalancing_rules() {
 		# create the default balancing chains
 		iptables -t mangle -N BALANCE
 
-		# test
-		# create the RESTOREMARK
-		iptables -t mangle -N RESTOREMARK
-		iptables -t mangle -A RESTOREMARK -j CONNMARK --restore-mark
-		#iptables -t mangle -A RESTOREMARK -j LOG --log-prefix 'restore-mark: ' --log-level info -m limit --limit 60/minute --limit-burst 1
+                # use the correct gateway when forwarding from LAN
+                iptables -t mangle -A PREROUTING -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
 
-		iptables -t mangle -A PREROUTING -m connmark ! --mark 0 -j RESTOREMARK
-		iptables -t mangle -A OUTPUT     -m connmark ! --mark 0 -j RESTOREMARK
+                # use the correct gateway for reply packets from local connections
+                iptables -t mangle -A OUTPUT     -m conntrack --ctstate ESTABLISHED,RELATED -j CONNMARK --restore-mark
 		;;
         pre_onetime_custom)
 		pre_onetime_custom_rules
@@ -338,54 +295,48 @@ izbalancing_rules() {
 		iptables -t mangle -N ${GWNM[$ID]}
 
 		# failover host management
-                if [ ! -z ${FHOST[$ID]} ]; then
-		  iptables -t mangle -A PREROUTING -d ${FHOST[$ID]} -j ${GWNM[$ID]}
-		  iptables -t mangle -A OUTPUT -d ${FHOST[$ID]} -j ${GWNM[$ID]}
-		  iptables -t mangle -A ${GWNM[$ID]} -d ${FHOST[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
-                elif [ ! -z ${FHOST[1]} ]; then
-		  echo "WARNING: the interface ${GWIF[$ID]} has not failover host associated, using the first in the list: ${FHOST[1]}"
-		  iptables -t mangle -A PREROUTING -d ${FHOST[1]} -j ${GWNM[1]}
-		  iptables -t mangle -A OUTPUT -d ${FHOST[1]} -j ${GWNM[1]}
-		  iptables -t mangle -A ${GWNM[$ID]} -d ${FHOST[1]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                if [ ! -z ${FAILOVER[$ID]} ]; then
+		  iptables -t mangle -A OUTPUT -d ${FAILOVER[$ID]} -j ${GWNM[$ID]}
+		  iptables -t mangle -A ${GWNM[$ID]} -d ${FAILOVER[$ID]} -j MARK --set-mark ${GWID[$ID]}
+                elif [ ! -z ${FAILOVER[1]} ]; then
+		  echo "WARNING: the interface ${GWIF[$ID]} has not failover host associated, using the first in the list: ${FAILOVER[1]}"
+		  iptables -t mangle -A OUTPUT -d ${FAILOVER[1]} -j ${GWNM[1]}
+		  iptables -t mangle -A ${GWNM[$ID]} -d ${FAILOVER[1]} -j MARK --set-mark ${GWID[$ID]}
                 else
 		  echo "WARNING: the interface ${GWIF[$ID]} has not failover host associated, izping will not able to recovery the connetion after a failure"
                 fi
 
 		# verify host management
-                if [ ! -z ${VHOST[$ID]} ]; then
-		  iptables -t mangle -A PREROUTING -d ${VHOST[$ID]} -j ${GWNM[$ID]}
-		  iptables -t mangle -A OUTPUT -d ${VHOST[$ID]} -j ${GWNM[$ID]}
-		  #iptables -t mangle -A ${GWNM[$ID]} -d ${VHOST[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
-                elif [ ! -z ${VHOST[1]} ]; then
-		  echo "WARNING: the interface ${GWIF[$ID]} has not verify host associated, using the first in the list: ${VHOST[1]}"
-		  iptables -t mangle -A PREROUTING -d ${VHOST[1]} -j ${GWNM[$ID]}
-		  iptables -t mangle -A OUTPUT -d ${VHOST[1]} -j ${GWNM[$ID]}
-		  #iptables -t mangle -A ${GWNM[$ID]} -d ${VHOST[1]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+                if [ ! -z ${VERIFY[$ID]} ]; then
+		  iptables -t mangle -A OUTPUT -d ${VERIFY[$ID]} -j ${GWNM[$ID]}
+                elif [ ! -z ${VERIFY[1]} ]; then
+		  echo "WARNING: the interface ${GWIF[$ID]} has not verify host associated, using the first in the list: ${VERIFY[1]}"
+		  iptables -t mangle -A OUTPUT -d ${VERIFY[1]} -j ${GWNM[$ID]}
                 else
 		  echo "WARNING: the interface ${GWIF[$ID]} has not verify host associated, izping will not able to recovery the connetion after a failure"
                 fi
 
-
-		iptables -t mangle -A ${GWNM[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWTB[$ID]}
+		iptables -t mangle -A ${GWNM[$ID]} -m mark --mark 0 -j MARK --set-mark ${GWID[$ID]}
 		iptables -t mangle -A ${GWNM[$ID]} -j CONNMARK --save-mark
-		#iptables -t mangle -A ${GWTNM} -j LOG --log-prefix "GWIP${GWTB[$ID]}: " --log-level info
+		#iptables -t mangle -A ${GWTNM} -j LOG --log-prefix "GWIP${GWID[$ID]}: " --log-level info
 
 		MAC_ADDRESS="$(find_macaddress ${GWIP[$ID]})"
                 if [ -n "$MAC_ADDRESS" ]
                   then
-			# mac address based rules
-			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -m mac --mac-source $MAC_ADDRESS -j ${GWNM[$ID]}
-			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -j ${GWNM[$ID]}
+                        # save the gateway in the connection mark for new incoming connections (mac address based rules)
+                        iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -m mac --mac-source $MAC_ADDRESS -j ${GWNM[$ID]}
+                        iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
 		  else
-			# device name based rules
-			iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -j ${GWNM[$ID]}
+                        # save the gateway in the connection mark for new incoming connections
+                        iptables -t mangle -A PREROUTING -i ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
 		fi
 		;;
         main_onetime_custom)
 		custom_rules
                 ;;
         post)
-		iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m mark --mark 0 -j ${GWNM[$ID]}
+                # save the gateway in the connection mark for new outgoing connections
+                iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
 		post_custom_rules
                 ;;
         post_onetime_custom)
@@ -401,6 +352,7 @@ izbalancing_rules() {
 		  done
 
 		#iptables -t mangle -A POSTROUTING -j CONNMARK --save-mark
+		#iptables -t mangle -A OUTPUT -j CONNMARK --save-mark
                 ;;
         *)
                 echo "$0: wrong method called - abort"
@@ -418,7 +370,7 @@ stop_iptables() {
 stop_all() {
 	global_init
 	stop_iptables
-        for ((ID=1;ID<=$GW_TOT;ID++)); do
+        for ID in ${!GATEWAY[@]}; do
 	  izbalancing stop
         done
 }
@@ -426,13 +378,17 @@ stop_all() {
 start_all() {
 	global_init
 	izbalancing_rules pre_onetime
-        for ((ID=1;ID<=$GW_TOT;ID++)); do
+        for ID in ${!GATEWAY[@]}; do
           # show debugs messages if required
           [ "$DEBUG" -ne 0 ] && show_debug
 	  izbalancing init
 	  izbalancing start
 	  izbalancing_rules pre
 	  izbalancing_rules post
+        done
+	# now add the ip rules src based after fwmark
+        for ID in ${!GATEWAY[@]}; do
+          izbalancing start_rules_post
         done
 	izbalancing_rules pre_onetime_custom
 	izbalancing_rules main_onetime_custom
@@ -450,9 +406,9 @@ GATEWAYS_TOT="$(count_args $GATEWAYS)"
 
 show_debug() {
   echo "=================== DEBUG ====================="
-  echo "  GWTB[$ID]=${GWTB[$ID]}		# Table ID"
-  echo "  GWIF[$ID]=${GWIF[$ID]}		# Interface"
-  echo "GWIFIP[$ID]=${GWIFIP[$ID]}	# Interface IP"
+  echo "  GWID[$ID]=${GWID[$ID]}	# Table ID"
+  echo "  GWIF[$ID]=${GWIF[$ID]}	# Interface"
+  echo "  IFIP[$ID]=${IFIP[$ID]}	# Interface IP"
   echo "  GWIP[$ID]=${GWIP[$ID]}	# Gateway IP"
   echo "  GWNM[$ID]=${GWNM[$ID]}	# Interface Name"
   echo "-----------------------------------------------"
@@ -500,62 +456,66 @@ fi
 # Note: dash (-) necessary
 
 
+izping_start() {
+        if [ -x /etc/init.d/izping ]; then
+                echo "=== Start iZPing Daemon"
+                /etc/init.d/izping -d -g "${GATEWAY[*]}" -v "${VERIFY[*]}" -f "${FAILOVER[*]}" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Started"
+        fi
+}
+
+
+izping_stop() {
+        if [ -x /etc/init.d/izping ]; then
+                echo "=== Stop iZPing Daemon"
+                /etc/init.d/izping -k -g "${GATEWAY[*]}" -v "${VERIFY[*]}" -f "${FAILOVER[*]}" -l "/var/log/izping.log"
+                echo "====== iZPing Daemon Stopped"
+        fi
+}
+
+
 case $1 in
     stop)
 	config
 	env
 	stop_all
-        if [ -x /etc/init.d/izping ]; then
-                echo "=== Stop iZPing Daemon"
-                /etc/init.d/izping -k -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
-                echo "====== iZPing Daemon Stopped"
-        fi
+	izping_stop
         ;;
     start)
 	config
 	env
 	stop_all
 	start_all
-        if [ -x /etc/init.d/izping ]; then
-                echo "=== Start iZPing Daemon"
-                /etc/init.d/izping -d -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
-                echo "====== iZPing Daemon Started"
-        fi
+	izping_start
         ;;
     restart)
 	config
 	env
 	stop_all
 	start_all
-        if [ -x /etc/init.d/izping ]; then
-                echo "=== Stop iZPing Daemon"
-                /etc/init.d/izping -k -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
-                echo "====== iZPing Daemon Stopped"
-                echo "=== Start iZPing Daemon"
-                /etc/init.d/izping -d -g "$GATEWAYS" -v "$VERIFY_HOSTS" -f "$FAILOVER_HOSTS" -l "/var/log/izping.log"
-                echo "====== iZPing Daemon Started"
-        fi
+	izping_stop
+	izping_start
         ;;
     config-routes)
         config
         env
         global_init
-        for ((ID=1;ID<=$GW_TOT;ID++)); do
+        for ID in ${!GATEWAY[@]}; do
           # show debugs messages if required
           [ "$DEBUG" -ne 0 ] && show_debug
           izbalancing stop_route
-          izbalancing start_route
+          izbalancing start_routes
         done
         ;;
     status)
         config
         env
         global_init
-        for ((ID=1;ID<=$GW_TOT;ID++)); do
+        for ID in ${!GATEWAY[@]}; do
           # show debugs messages if required
           [ "$DEBUG" -ne 0 ] && show_debug
           bstatus="$(iptables -L ${GWNM[$ID]} -v -n -t mangle --line-numbers | grep ^1 | awk '{ print $NF }' | sed 's/0x//')"
-          [ $bstatus = ${GWTB[$ID]} ] && lstatus="UP" || lstatus="DOWN"
+          [ $bstatus = ${GWID[$ID]} ] && lstatus="UP" || lstatus="DOWN"
           if [ -z $2 ] ; then
             echo "Line: ${GWNM[$ID]} Status: $lstatus"
             unset bstatus lstatus
@@ -669,6 +629,11 @@ esac
 #    automatic failover and recovery of lines, checking the ip addresses specified into VERIFY_HOSTS and 
 #    FAILOVER_HOSTS variables
 
+# Testing without real interfaces:
+# ip li add dummy1 type dummy ; ip a add 10.0.1.254/24 dev dummy1 ; ip link set dummy1 up
+# ip li add dummy2 type dummy ; ip a add 10.0.2.254/24 dev dummy2 ; ip link set dummy2 up
+# ip li add dummy3 type dummy ; ip a add 10.0.3.254/24 dev dummy3 ; ip link set dummy3 up
+# ip li add dummy4 type dummy ; ip a add 10.0.4.254/24 dev dummy4 ; ip link set dummy4 up
 
 # TODO:
 # =====
@@ -690,6 +655,8 @@ esac
 
 # ChangeLog:
 # ==========
+# 20170329 - 1.4 - updates for kernel >=3.6, major code cleanup and restructuration
+# 20161220 - 1.3 - added new command line option: 'status' to display wan lines status
 # 20131011 - 1.2 - added new command line option: 'config-routes' to reconfig only routing system without restarting all balancing rules
 # 20130603 - 1.1 - misc bugfixes (internal release)
 # 20130102 - 1.0 - first public release
