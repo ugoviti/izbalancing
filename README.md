@@ -1,5 +1,6 @@
 # izBalancing
-izBalancing allow your linux firewall to become a multihomed input/output loadbalanced internet gateway with failover facility
+izBalancing allow your linux firewall to become a multihomed input/output loadbalanced internet gateway with failover facility <br/>
+Author: Ugo Viti <ugo.viti@initzero.it>
 
 ## What is this?
 This bash script allow you to easly and fastly configure a complex Load Balancing Multi Homed Internet Gateway
