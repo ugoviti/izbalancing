@@ -6,7 +6,7 @@
 # please visit http://www.initzero.it for commercial support
 # For README, HowTo, ChangeLog, Contributors and License go to the end of this script
 VERSION="1.4"
-VERSION_DATE="20170329"
+VERSION_DATE="20170617"
 
 config() {
  GATEWAY[1]="dummy1:10.0.1.1:wan1"
