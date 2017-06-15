@@ -337,6 +337,7 @@ izbalancing_rules() {
         post)
                 # save the gateway in the connection mark for new outgoing connections
                 iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
+		iptables -t mangle -A OUTPUT -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
 		post_custom_rules
                 ;;
         post_onetime_custom)
