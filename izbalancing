@@ -5,8 +5,8 @@
 # written by Ugo Viti <ugo.viti@initzero.it>
 # please visit http://www.initzero.it for commercial support
 # For README, HowTo, ChangeLog, Contributors and License go to the end of this script
-VERSION="1.4"
-VERSION_DATE="20170617"
+VERSION="1.5"
+VERSION_DATE="20170808"
 
 config() {
  GATEWAY[1]="dummy1:10.0.1.1:wan1"
@@ -336,9 +336,8 @@ izbalancing_rules() {
                 ;;
         post)
                 # save the gateway in the connection mark for new outgoing connections
-                iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
-		iptables -t mangle -A OUTPUT -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
 		post_custom_rules
+                iptables -t mangle -A POSTROUTING -o ${GWIF[$ID]} -m conntrack --ctstate NEW -j ${GWNM[$ID]}
                 ;;
         post_onetime_custom)
 		post_onetime_custom_rules
@@ -656,6 +655,7 @@ esac
 
 # ChangeLog:
 # ==========
+# 20170808 - 1.5 - fix for OUTPUT mangle rules
 # 20170329 - 1.4 - updates for kernel >=3.6, major code cleanup and restructuration
 # 20161220 - 1.3 - added new command line option: 'status' to display wan lines status
 # 20131011 - 1.2 - added new command line option: 'config-routes' to reconfig only routing system without restarting all balancing rules
