@@ -227,8 +227,8 @@ izbalancing() {
                 ip route add default via ${GWIP[$ID]} table ${GWID[$ID]}
 
                 # import from table 'main' to 'current table' the whole routing settings
-                ip route show scope link proto kernel | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done
-                #ip route show table main | grep -Ev '(^default|ppp)' | grep -Ev nexthop | grep -Ev ^169.254.0.0/16 | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done
+                #ip route show scope link proto kernel | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done # attenzione questo non funziona con le tun
+                ip route show table main | grep -Ev '(^default|ppp)' | grep -Ev nexthop | grep -Ev ^169.254.0.0/16 | while read ROUTE; do ip route add table ${GWID[$ID]} $ROUTE; done
                 ;;
         start_rules)
                 PRIO="${GWID[$ID]}00"
